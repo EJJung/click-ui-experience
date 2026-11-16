@@ -1,0 +1,193 @@
+#!/usr/bin/env node
+
+// Writes machine-readable metadata for AI tools and other consumers into dist/ai/:
+//
+//   dist/ai/components.json   every public component: import path, Storybook page,
+//                             props (type, required, default, JSDoc) and the
+//                             design tokens its stylesheet reads
+//   dist/ai/tokens.json       every CSS custom property with its light and dark value
+//
+// Everything is derived from source on each build, so it cannot drift from the
+// code. Run by `yarn build` after `vite build`; standalone: `yarn generate:ai-manifest`.
+
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import ts from 'typescript';
+import docgen from 'react-docgen-typescript';
+
+const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const outDir = path.join(rootDir, 'dist/ai');
+const packageJson = JSON.parse(
+  fs.readFileSync(path.join(rootDir, 'package.json'), 'utf-8')
+);
+const STORYBOOK_URL = 'https://clickhouse.design/click-ui';
+
+// Public names and the folder each one is exported from, read from src/index.ts.
+const publicExports = () => {
+  const indexPath = path.join(rootDir, 'src/index.ts');
+  const source = ts.createSourceFile(
+    indexPath,
+    fs.readFileSync(indexPath, 'utf-8'),
+    ts.ScriptTarget.Latest,
+    true
+  );
+  const folderByName = new Map();
+  for (const node of source.statements) {
+    if (
+      !ts.isExportDeclaration(node) ||
+      node.isTypeOnly ||
+      !node.moduleSpecifier ||
+      !node.exportClause
+    ) {
+      continue;
+    }
+    const modulePath = node.moduleSpecifier.text;
+    if (
+      !modulePath.startsWith('./components/') ||
+      !ts.isNamedExports(node.exportClause)
+    ) {
+      continue;
+    }
+    const folder = modulePath.slice('./components/'.length).split('/')[0];
+    for (const element of node.exportClause.elements) {
+      folderByName.set(element.name.text, folder);
+    }
+  }
+  return folderByName;
+};
+
+const listFiles = (dir, test) =>
+  fs.existsSync(dir)
+    ? fs
+        .readdirSync(dir, { recursive: true })
+        .map(file => path.join(dir, String(file)))
+        .filter(test)
+    : [];
+
+const relative = file => path.relative(rootDir, file);
+
+const storyPages = folderPath =>
+  listFiles(folderPath, f => f.endsWith('.stories.tsx'))
+    .map(file => fs.readFileSync(file, 'utf-8').match(/title:\s*['"]([^'"]+)['"]/)?.[1])
+    .filter(Boolean)
+    .map(title => ({
+      title,
+      url: `${STORYBOOK_URL}/?path=/docs/${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}--docs`,
+    }));
+
+const tokensRead = (folderPath, defined) => {
+  const names = new Set();
+  for (const file of listFiles(folderPath, f => f.endsWith('.module.css'))) {
+    for (const match of fs
+      .readFileSync(file, 'utf-8')
+      .matchAll(/var\(\s*(--(?:click-)?[\w-]+)/g)) {
+      if (defined.has(match[1])) {
+        names.add(match[1]);
+      }
+    }
+  }
+  return [...names].sort();
+};
+
+const parseTokens = file => {
+  const values = {};
+  const css = fs.readFileSync(path.join(rootDir, file), 'utf-8');
+  for (const match of css.matchAll(/^\s*(--[\w-]+):\s*([^;]+);/gm)) {
+    values[match[1]] ??= match[2].trim();
+  }
+  return values;
+};
+
+try {
+  const folderByName = publicExports();
+  const folders = [...new Set(folderByName.values())];
+  const sourceFiles = folders.flatMap(folder =>
+    listFiles(
+      path.join(rootDir, 'src/components', folder),
+      f => f.endsWith('.tsx') && !/\.(stories|test)\.tsx$/.test(f)
+    )
+  );
+
+  const parser = docgen.withCustomConfig(path.join(rootDir, 'tsconfig.json'), {
+    shouldExtractLiteralValuesFromEnum: true,
+    shouldRemoveUndefinedFromOptional: true,
+    savePropValueAsString: true,
+    // Keep the component's own props; drop the hundreds inherited from React's DOM types.
+    propFilter: prop => !prop.parent || !prop.parent.fileName.includes('node_modules'),
+  });
+
+  const light = parseTokens('src/theme/styles/tokens-light.css');
+  const dark = parseTokens('src/theme/styles/tokens-dark.css');
+  const defined = new Set([...Object.keys(light), ...Object.keys(dark)]);
+
+  const seen = new Set();
+  const components = parser
+    .parse(sourceFiles)
+    .filter(
+      doc =>
+        folderByName.has(doc.displayName) &&
+        !seen.has(doc.displayName) &&
+        seen.add(doc.displayName)
+    )
+    .map(doc => {
+      const folder = folderByName.get(doc.displayName);
+      const folderPath = path.join(rootDir, 'src/components', folder);
+      return {
+        name: doc.displayName,
+        import: `import { ${doc.displayName} } from '${packageJson.name}/${folder}';`,
+        description: doc.description || null,
+        source: relative(doc.filePath),
+        docs: storyPages(folderPath),
+        props: Object.values(doc.props)
+          .map(prop => ({
+            name: prop.name,
+            type: prop.type.raw ?? prop.type.name,
+            values: Array.isArray(prop.type.value)
+              ? prop.type.value.map(v => String(v.value).replace(/^"(.*)"$/, '$1'))
+              : undefined,
+            required: prop.required,
+            default: prop.defaultValue?.value ?? null,
+            description: prop.description || null,
+          }))
+          .sort((a, b) => a.name.localeCompare(b.name)),
+        tokens: tokensRead(folderPath, defined),
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  const tokens = [...defined].sort().map(name => ({
+    name,
+    light: light[name] ?? null,
+    dark: dark[name] ?? null,
+  }));
+
+  const meta = {
+    package: packageJson.name,
+    version: packageJson.version,
+    generatedBy: '.scripts/js/generate-ai-manifest',
+  };
+
+  fs.mkdirSync(outDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(outDir, 'components.json'),
+    JSON.stringify({ ...meta, components }, null, 2) + '\n'
+  );
+  fs.writeFileSync(
+    path.join(outDir, 'tokens.json'),
+    JSON.stringify({ ...meta, tokens }, null, 2) + '\n'
+  );
+
+  const propCount = components.reduce((n, c) => n + c.props.length, 0);
+  const described = components.reduce(
+    (n, c) => n + c.props.filter(p => p.description).length,
+    0
+  );
+  console.log(
+    `🤖 AI manifest: ${components.length} components, ${propCount} props (${described} with JSDoc), ${tokens.length} tokens → dist/ai/`
+  );
+} catch (error) {
+  console.error('\n❌ Error: Failed to generate the AI manifest:\n');
+  console.error(error);
+  process.exit(1);
+}

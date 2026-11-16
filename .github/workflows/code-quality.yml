@@ -37,5 +37,8 @@ jobs:
       - name: Formatter
         run: yarn format
 
+      - name: Token references, tiers and theme parity
+        run: yarn tokens:check
+
       - name: Circular Dependencies
         run: yarn circular-dependency:check

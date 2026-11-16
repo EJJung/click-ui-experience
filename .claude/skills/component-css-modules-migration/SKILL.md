@@ -1,9 +1,11 @@
 ---
 name: component-css-modules-migration
-description: Migrate a click-ui component from styled-components to CSS Modules with byte-for-byte visual regression coverage. Use whenever a component still uses styled-components and is on the CSS Modules migration list.
+description: Two-commit procedure for a pure styling refactor of a click-ui component (visual baseline first, then the refactor, snapshots byte-for-byte). Written for the styled-components to CSS Modules migration, which is complete; use it for any CSS restructure, token re-pointing or class rename that must not change what renders.
 ---
 
 # Component CSS Modules Migration
+
+> **Status:** the migration this skill was written for is complete. `styled-components` was removed in #1151 (July 2026); no component uses it. Keep using the two-commit structure, the scope rule and the pitfalls below for any **pure styling refactor**: re-pointing a component's tokens, restructuring its CSS, renaming BEM classes. Read "styled-components rendering" as "the rendering before your refactor". Steps that only make sense for styled-components (translating `theme.click.*` interpolations, dropping transient `$` props) are kept as history.
 
 A repeatable procedure for migrating one click-ui component at a time from `styled-components` to CSS Modules + `cva` / `cn`. The pattern was first executed end-to-end in PR #1034 (ButtonGroup), which is the canonical reference if anything here is ambiguous.
 
@@ -28,7 +30,7 @@ The only collateral change you may need: a narrow TypeScript widening (e.g. `HTM
 ## Prerequisites
 
 1. The component still uses `styled-components` (check `src/components/<Name>/<Name>.tsx`).
-2. The component's design tokens already exist as CSS variables in `packages/design-tokens/dist/tokens.css` (search for `--click-<component-name>-*`).
+2. The component's design tokens already exist as CSS variables in `src/theme/styles/tokens-light.css` (search for `--click-<component-name>-*`).
 3. The `Button` precedent is readable: `src/components/Button/Button.tsx` and `src/components/Button/Button.module.css`.
 4. `yarn test:visual` and `yarn test:visual:update` work (they invoke `.scripts/bash/playwright-docker`, which runs Playwright inside a Linux container; both take a component name to scope the run, e.g. `yarn test:visual <Name>`). If they don't work, **fix the tooling first as its own commit** — don't work around it locally.
 
@@ -112,7 +114,7 @@ After generating, run `yarn test:visual <Name>` to confirm green, then `git add`
 ### Files
 
 - `src/components/<Name>/<Name>.module.css` — **New file.** Translates the styled-components rules into CSS. Concrete rules:
-  - **One CSS variable per `theme.click.*` reference.** Find each `${({ theme }) => theme.click.x.y.z}` in the styled-components source and replace with `var(--click-x-y-z)`. The token names already exist in `packages/design-tokens/dist/tokens.css`.
+  - **One CSS variable per `theme.click.*` reference.** Find each `${({ theme }) => theme.click.x.y.z}` in the styled-components source and replace with `var(--click-x-y-z)`. The token names already exist in `src/theme/styles/tokens-light.css`.
   - **Match the existing selectors exactly.** If the source has `&:hover` (no `:not(:disabled)` qualifier), write `.component:hover` — do NOT "improve" it to `.component:hover:not(:disabled)`. If the source has no `:focus-visible` rule, don't add one. Preserving wrong behavior is the price of byte-for-byte verification.
   - **Match cascade order.** styled-components emits rules in source order. If the original has `&[aria-pressed='true']` defined twice (once before `:disabled`, once after), the second appearance is doing real work via cascade — replicate that ordering.
   - **Use BEM naming** per the regex in `stylelint.config.js`: `block`, `block__element`, `block_modifier`, `block_modifier_value`. Modifier values use underscores, not dashes.
