@@ -354,6 +354,8 @@
       "import": "./dist/esm/hooks/index.js",
       "require": "./dist/cjs/hooks/index.cjs"
     },
+    "./ai/components.json": "./dist/ai/components.json",
+    "./ai/tokens.json": "./dist/ai/tokens.json",
     "./hooks/internal": null
   },
   "keywords": [
@@ -385,6 +387,7 @@
     "format": "prettier --check .",
     "format:fix": "prettier --write .",
     "generate:exports": ".scripts/js/generate-exports",
+    "generate:ai-manifest": ".scripts/js/generate-ai-manifest",
     "generate:tokens": "node ./.scripts/js/generate-tokens.js && prettier --write src/theme/tokens",
     "lint": "yarn lint:code && yarn lint:css",
     "lint:fix": "yarn lint:code:fix && yarn lint:css:fix",
@@ -475,6 +478,7 @@
     "prettier": "3.9.10",
     "prop-types": "^15.8.1",
     "react": "18.3.1",
+    "react-docgen-typescript": "2.4.0",
     "react-dom": "18.3.1",
     "rollup-plugin-visualizer": "^6.0.5",
     "skott": "^0.35.4",

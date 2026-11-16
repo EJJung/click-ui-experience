@@ -75,6 +75,10 @@ try {
     require: './dist/cjs/hooks/index.cjs',
   };
 
+  // Machine-readable component and token metadata, see .scripts/js/generate-ai-manifest
+  exports['./ai/components.json'] = './dist/ai/components.json';
+  exports['./ai/tokens.json'] = './dist/ai/tokens.json';
+
   // Warn: Explicitly block internal hooks from being imported
   // e.g. modern bundlers should error and no types declared for path (typescript)
   exports['./hooks/internal'] = null;
