@@ -28,6 +28,7 @@ yarn lint                       # eslint (src, plugins) + stylelint (src/**/*.cs
 yarn format                     # prettier check of every file not in .gitignore or .prettierignore; yarn format:fix writes; one path: yarn prettier --write <path>
 yarn lint:code --prune-suppressions  # after fixing a frozen jsx-a11y violation (see section 7)
 yarn circular-dependency:check
+yarn tokens:check               # undefined var() refs, tier leaks, theme parity; debt frozen in token-debt.json
 yarn build                      # .scripts/bash/build_pkg_dist -> dist/
 yarn storybook:build            # static Storybook -> .storybook/out (what CI deploys)
 yarn test:visual <Name>         # Playwright visual tests in Docker (Linux); needs Docker running
@@ -37,14 +38,14 @@ yarn changeset:add              # interactive wizard; see section 9 for writing 
 yarn generate:tokens            # rebuild src/theme tokens from tokens/themes; token owners only, see section 4
 ```
 
-CI runs these as separate checks: `typecheck`, `lint`, `format`, `circular-dependency:check`,
+CI runs these as separate checks: `typecheck`, `lint`, `format`, `tokens:check`, `circular-dependency:check`,
 `test`, `build` + `build:health_check`, visual regression (only specs whose `@covers` line
 matches the diff), Chromatic, and a PR-title check (Conventional Commits).
 
 Before you open a PR, run all of this and make it pass:
 
 ```sh
-yarn typecheck && yarn lint && yarn format && yarn circular-dependency:check && yarn test && yarn build && yarn storybook:build
+yarn typecheck && yarn lint && yarn format && yarn tokens:check && yarn circular-dependency:check && yarn test && yarn build && yarn storybook:build
 ```
 
 ## 3. Repository map
@@ -97,10 +98,14 @@ plugins/css-colocate/           # Vite + PostCSS plugins: CSS colocation and the
    the owners in `.github/CODEOWNERS` on a PR with the `tokens-update` label. Never edit these
    files and never add that label yourself. If a component needs a token that does not exist,
    use the nearest existing one and say so in the PR, or stop and ask for a design update.
+   `token-debt.json` freezes existing tier leaks and theme gaps; like `eslint-suppressions.json`
+   it only shrinks (`yarn tokens:check --prune` after a token export fixes some).
 
 ## 5. Building or changing a component
 
-Copy an existing component instead of inventing structure:
+Copy an existing component instead of inventing structure, but only one of the three below: many
+older components predate these rules (no `<Name>.types.ts`, `type` instead of `variant`). Follow this
+section, not the neighbour. For prop names, see `docs/decisions/0001-component-prop-vocabulary.md`.
 
 - Simple component: `src/components/Button/`.
 - Polymorphic component (renders as different elements): `src/components/Container/`.
@@ -465,6 +470,7 @@ test(Button): cover loading state
 - `ACCESSIBILITY.md` — the accessibility policy: target, severity, definition of done, debt tracking.
 - `docs/tests/playwright.md` — visual tests in Docker, single-component runs, reports.
 - `docs/publish.md` — releases.
+- `docs/decisions/` — decision records (`NNNN-<title>.md`). Read before changing a convention.
 - `docs/converting-svg-to-react-components.md` — adding icons, logos, flags.
 - `.claude/skills/component-css-modules-migration/SKILL.md` — a worked, two-commit procedure
   for pure styling refactors. Its pitfalls list applies to any component change.
