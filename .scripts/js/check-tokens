@@ -1,0 +1,125 @@
+#!/usr/bin/env node
+
+// Token health check. See .scripts/js/shared/token-check-utils.mjs for what
+// each check means.
+//
+//   yarn tokens:check           fail on undefined var() references and on any
+//                               tier leak or parity gap not in token-debt.json
+//   yarn tokens:check --prune   rewrite token-debt.json after debt was fixed
+//                               (never to accept new debt)
+
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import {
+  compareWithBaseline,
+  declaredProperties,
+  findParityGaps,
+  findTierLeaks,
+  findUndefinedReferences,
+  inlineStyleProperties,
+} from './shared/token-check-utils.mjs';
+
+const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const baselinePath = path.join(rootDir, 'token-debt.json');
+const prune = process.argv.includes('--prune');
+
+const read = file => fs.readFileSync(path.join(rootDir, file), 'utf-8');
+const readJson = file => JSON.parse(read(file));
+
+const listFiles = (dir, test) =>
+  fs
+    .readdirSync(path.join(rootDir, dir), { recursive: true })
+    .map(file => path.join(dir, String(file)))
+    .filter(test);
+
+// 1. Undefined var() references
+const stylesheets = listFiles('src', f => f.endsWith('.css'));
+const sources = listFiles('src', f => f.endsWith('.tsx') || f.endsWith('.ts'));
+
+const known = new Set();
+for (const file of stylesheets) {
+  declaredProperties(read(file)).forEach(name => known.add(name));
+}
+for (const file of sources) {
+  inlineStyleProperties(read(file)).forEach(name => known.add(name));
+}
+
+const undefinedRefs = stylesheets.flatMap(file =>
+  findUndefinedReferences(read(file), known).map(ref => `${file}:${ref.line} ${ref.name}`)
+);
+
+// 2 and 3. Frozen debt
+const light = readJson('tokens/themes/light.json');
+const dark = readJson('tokens/themes/dark.json');
+const { lightOnly, darkOnly } = findParityGaps(light, dark);
+const current = {
+  tierLeaksLight: findTierLeaks(light),
+  tierLeaksDark: findTierLeaks(dark),
+  parityLightOnly: lightOnly,
+  parityDarkOnly: darkOnly,
+};
+
+const readBaseline = () =>
+  fs.existsSync(baselinePath) ? JSON.parse(fs.readFileSync(baselinePath, 'utf-8')) : null;
+
+if (prune) {
+  const baseline = readBaseline();
+  const diff = compareWithBaseline(current, baseline ?? {});
+  const grew = baseline !== null && Object.values(diff).some(d => d.added.length > 0);
+  if (grew) {
+    console.error('❌ --prune only removes fixed debt. New entries found:');
+    for (const [key, d] of Object.entries(diff))
+      d.added.forEach(x => console.error(`  ${key}: ${x}`));
+    process.exit(1);
+  }
+  fs.writeFileSync(baselinePath, JSON.stringify(current, null, 2) + '\n');
+  console.log('✔ token-debt.json rewritten');
+  process.exit(0);
+}
+
+let failed = false;
+
+if (undefinedRefs.length > 0) {
+  failed = true;
+  console.error(
+    `❌ ${undefinedRefs.length} var() reference(s) to a custom property nothing declares:`
+  );
+  undefinedRefs.forEach(ref => console.error(`  ${ref}`));
+  console.error('  Find the right name in src/theme/styles/tokens-light.css.\n');
+}
+
+const baseline = readBaseline();
+if (baseline === null) {
+  console.error(
+    '❌ token-debt.json is missing. Run `yarn tokens:check --prune` once to freeze the current debt.'
+  );
+  process.exit(1);
+}
+const diff = compareWithBaseline(current, baseline);
+
+for (const [key, { added }] of Object.entries(diff)) {
+  if (added.length > 0) {
+    failed = true;
+    console.error(
+      `❌ ${key}: ${added.length} new entr${added.length === 1 ? 'y' : 'ies'} not in token-debt.json:`
+    );
+    added.forEach(x => console.error(`  ${x}`));
+  }
+}
+if (failed) {
+  console.error(
+    '\nTier leaks: alias a global.* (semantic) token instead of palette.*, or ask the token owners for the missing semantic token.' +
+      '\nParity gaps: the token must exist in both light and dark. Tokens change only through the Figma export (AGENTS.md section 4).'
+  );
+  process.exit(1);
+}
+
+const resolved = Object.values(diff).reduce((n, d) => n + d.resolved.length, 0);
+const total = Object.values(current).reduce((n, list) => n + list.length, 0);
+console.log(`✔ tokens:check passed. Frozen debt: ${total} entries.`);
+if (resolved > 0) {
+  console.log(
+    `  ${resolved} frozen entr${resolved === 1 ? 'y is' : 'ies are'} fixed: run \`yarn tokens:check --prune\`.`
+  );
+}

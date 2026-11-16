@@ -398,6 +398,7 @@
     "storybook:build": "storybook build -o .storybook/out",
     "storybook:serve": "yarn dlx http-server .storybook/out",
     "test": "vitest",
+    "tokens:check": ".scripts/js/check-tokens",
     "test:chromatic": "yarn chromatic",
     "test:visual": ".scripts/bash/playwright-docker",
     "test:visual:report": ".scripts/bash/playwright-docker report",
