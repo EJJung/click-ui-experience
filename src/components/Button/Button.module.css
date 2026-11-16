@@ -1,4 +1,6 @@
 .button {
+  --button-transition: var(--transition-default);
+
   display: flex;
   position: relative;
   padding: var(--click-button-basic-space-y) var(--click-button-basic-space-x);
@@ -46,7 +48,7 @@
   border-color: var(--click-button-basic-color-primary-stroke-hover);
   background-color: var(--click-button-basic-color-primary-background-hover);
   font: var(--click-button-basic-typography-label-hover);
-  transition: var(--click-transition-default);
+  transition: var(--button-transition);
 }
 
 .button_primary:focus-visible:not(:disabled) {
@@ -83,7 +85,7 @@
   border-color: var(--click-button-basic-color-secondary-stroke-hover);
   background-color: var(--click-button-basic-color-secondary-background-hover);
   font: var(--click-button-basic-typography-label-hover);
-  transition: var(--click-transition-default);
+  transition: var(--button-transition);
 }
 
 .button_secondary:focus-visible:not(:disabled) {
@@ -120,7 +122,7 @@
   border-color: var(--click-button-basic-color-empty-stroke-hover);
   background-color: var(--click-button-basic-color-empty-background-hover);
   font: var(--click-button-basic-typography-label-hover);
-  transition: var(--click-transition-default);
+  transition: var(--button-transition);
 }
 
 .button_empty:focus-visible:not(:disabled) {
@@ -157,7 +159,7 @@
   border-color: var(--click-button-basic-color-danger-stroke-hover);
   background-color: var(--click-button-basic-color-danger-background-hover);
   font: var(--click-button-basic-typography-label-hover);
-  transition: var(--click-transition-default);
+  transition: var(--button-transition);
 }
 
 .button_danger:focus-visible:not(:disabled) {
@@ -265,6 +267,10 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .button {
+    --button-transition: none;
+  }
+
   .button_loading::before,
   .button_fill_width.button_loading::before {
     animation: none;
